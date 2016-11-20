@@ -1,4 +1,4 @@
-module Lib
+module Trahs
     ( someFunc
     ) where
 
