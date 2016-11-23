@@ -1,6 +1,4 @@
-module Trahs
-    ( someFunc
-    ) where
+module Trahs where
 
 someFunc :: IO ()
 someFunc = putStrLn "someFunc"
