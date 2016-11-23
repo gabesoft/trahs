@@ -16,6 +16,7 @@ data Command
   = FetchState
   | FetchFile FilePath
   | Turn
+  | Done
   deriving (Eq, Show, Read)
 
 data FileMeta = FileMeta
@@ -27,9 +28,9 @@ data FileMeta = FileMeta
 makeLenses ''FileMeta
 
 data GlobalMeta = GlobalMeta
-  { _globalReplica :: ReplicaId
-  , _globalVersion :: VersionNr
+  { _globalVersion :: VersionNr
   , _versionVector :: VersionMap
+  , _globalReplica :: ReplicaId
   } deriving (Eq, Show)
 
 makeLenses ''GlobalMeta
