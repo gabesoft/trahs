@@ -13,6 +13,6 @@ repl:
 
 run: export TRASSH=$(HOME)/.local/bin/trahs-exe --server
 run: install
-	stack exec trahs-exe -- localhost:dir-server dir-client
+	stack exec trahs-exe -- localhost:"$(HOME)/work/ufeed" "$(HOME)/work/trahs"
 
 .PHONY: release test loc clean

@@ -4,11 +4,13 @@ import Control.Applicative
 import Control.Exception
 import Control.Lens
 import Control.Monad (guard, filterM)
-import Data.ByteString (hPut, hGet)
+import Data.ByteString as B (hPut, hGet, length)
 import Data.ByteString.Char8 (pack, unpack)
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.Map as Map
+import Meta
 import Prelude hiding (log)
+import Sync
 import System.Environment
 import System.Exit
 import System.FilePath
@@ -16,7 +18,6 @@ import System.IO
 import System.Process
 import Trahs
 import Types
-import Sync
 
 main :: IO ()
 main = do
@@ -41,13 +42,14 @@ trassh = "ssh -CTaxq @ ./trahs --server"
 -- @server r w dir@ runs the code to serve the contents of @dir@,
 -- reading input from @r@ and writing it to @w@.
 server :: Handle -> Handle -> FilePath -> IO ()
-server r w dir
-  -- hPutStrLn w "I am the server"
-  -- log "Server ready, waiting for command ..."
-  -- TODO use bytestring hPut & hGet
- = do
+server r w dir = do
   cmd <- readCmd r
   case cmd of
+    InitSync -> initSync dir >> server r w dir
+    FetchMeta -> do
+      meta <- readGlobalMeta dir
+      sendAsBytes w meta
+      server r w dir
     Done -> return ()
     Turn -> client False r w dir
     _ -> do
@@ -55,20 +57,31 @@ server r w dir
       server r w dir
 
 client :: Bool -> Handle -> Handle -> FilePath -> IO ()
-client turn r w dir
-  -- line1 <- hGetLine r
-  -- log ("The server said1 " ++ show line1)
- = do
-  log ("This is the client " ++ dir)
+client turn r w dir = do
+  log ("Client init sync in " ++ dir)
+  sendCmd w InitSync
+  initSync dir
   sendCmd w FetchMeta
-  line2 <- hGetLine r
-  log ("The server said " ++ show line2)
+  serverMeta <- readAsBytes r :: IO GlobalMeta
+  log ("The server sent " ++ show serverMeta)
   sendCmd w (FetchFile "/etc/passwd")
   line3 <- hGetLine r
   log ("The server said " ++ show line3)
   if turn
     then sendCmd w Turn >> server r w dir
     else sendCmd w Done
+
+sendAsBytes :: Show a => Handle -> a -> IO ()
+sendAsBytes handle cargo = do
+  let bytes = pack (show cargo)
+  hPutStrLn handle (show $ B.length bytes)
+  hPut handle bytes
+
+readAsBytes :: Read a => Handle -> IO a
+readAsBytes handle = do
+  count <- read <$> hGetLine handle
+  bytes <- hGet handle count
+  return (read $ unpack bytes)
 
 -- |
 -- Log a message to stderr

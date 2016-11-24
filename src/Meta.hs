@@ -37,6 +37,6 @@ readGlobalMeta dir = read <$> readFile (dir </> traDb)
 -- Write the global metadata into @dir@
 writeGlobalMeta :: FilePath -> GlobalMeta -> IO ()
 writeGlobalMeta dir meta = do
-  _ <- writeFile (dir </> traDbTemp) (show meta)
-  _ <- renameFile traDbTemp traDb
+  writeFile (dir </> traDbTemp) (show meta)
+  renameFile (dir </> traDbTemp) (dir </> traDb)
   return ()
