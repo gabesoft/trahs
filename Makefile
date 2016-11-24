@@ -13,6 +13,6 @@ repl:
 
 run: export TRASSH=$(HOME)/.local/bin/trahs-exe --server
 run: install
-	stack exec trahs-exe -- localhost:dir1 dir2
+	stack exec trahs-exe -- localhost:dir-server dir-client
 
 .PHONY: release test loc clean

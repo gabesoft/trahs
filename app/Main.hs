@@ -1,21 +1,22 @@
 module Main where
 
-import Codec.Digest.SHA
 import Control.Applicative
+import Control.Exception
 import Control.Lens
+import Control.Monad (guard, filterM)
 import Data.ByteString (hPut, hGet)
 import Data.ByteString.Char8 (pack, unpack)
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.Map as Map
-import Data.UUID (toString)
-import Data.UUID.V4 (nextRandom)
 import Prelude hiding (log)
 import System.Environment
 import System.Exit
+import System.FilePath
 import System.IO
 import System.Process
 import Trahs
 import Types
+import Sync
 
 main :: IO ()
 main = do
@@ -37,38 +38,6 @@ trassh :: String
 trassh = "ssh -CTaxq @ ./trahs --server"
 
 -- |
--- Metadata db file name
-traDb :: String
-traDb = ".trahs.db"
-
--- |
--- Temporary metadata db file name
-traDbTemp :: String
-traDbTemp = ".trahs.db~"
-
--- |
--- Generates a unique replica id
-mkReplicaId :: IO ReplicaId
-mkReplicaId = toString <$> nextRandom
-
--- |
--- Generate a default global meta object
-mkGlobalMeta :: IO GlobalMeta
-mkGlobalMeta = GlobalMeta 1 (Map.empty) <$> mkReplicaId
-
--- |
--- Get the max known version for a replica id
-getVersion :: GlobalMeta -> ReplicaId -> VersionNr
-getVersion meta rid
-  | rid == (meta ^. globalReplica) = meta ^. globalVersion
-  | otherwise = maybe 0 id $ Map.lookup rid (meta ^. versionVector)
-
--- |
--- Create a SHA-256 hash of a file
-hashFile :: FilePath -> IO String
-hashFile path = showBSasHex <$> (hash SHA256 <$> BL.readFile path)
-
--- |
 -- @server r w dir@ runs the code to serve the contents of @dir@,
 -- reading input from @r@ and writing it to @w@.
 server :: Handle -> Handle -> FilePath -> IO ()
@@ -82,7 +51,7 @@ server r w dir
     Done -> return ()
     Turn -> client False r w dir
     _ -> do
-      hPutStrLn w ("Command received " ++ show cmd)
+      hPutStrLn w ("Command received " ++ dir ++ " " ++ show cmd)
       server r w dir
 
 client :: Bool -> Handle -> Handle -> FilePath -> IO ()
@@ -90,7 +59,8 @@ client turn r w dir
   -- line1 <- hGetLine r
   -- log ("The server said1 " ++ show line1)
  = do
-  sendCmd w FetchState
+  log ("This is the client " ++ dir)
+  sendCmd w FetchMeta
   line2 <- hGetLine r
   log ("The server said " ++ show line2)
   sendCmd w (FetchFile "/etc/passwd")
@@ -100,15 +70,23 @@ client turn r w dir
     then sendCmd w Turn >> server r w dir
     else sendCmd w Done
 
+-- |
+-- Log a message to stderr
 log :: String -> IO ()
 log = hPutStrLn stderr
 
+-- |
+-- Send a command to the process at @handle@
 sendCmd :: Handle -> Command -> IO ()
-sendCmd h = hPutStrLn h . show
+sendCmd handle = hPutStrLn handle . show
 
+-- |
+-- Read a command from the process at @handle@
 readCmd :: Handle -> IO Command
-readCmd h = read <$> hGetLine h
+readCmd handle = read <$> hGetLine handle
 
+-- |
+-- Create a command used to connect to a remote @host@ with @dir@
 hostCmd :: String -> FilePath -> IO String
 hostCmd host dir = do
   tmpl <- maybe trassh id <$> lookupEnv "TRASSH"
@@ -116,6 +94,8 @@ hostCmd host dir = do
     (b, '@':e) -> return $ b ++ host ++ e ++ ' ' : dir
     _ -> return $ tmpl ++ ' ' : dir
 
+-- |
+-- Spawn a remote process on @host@ with @dir@
 spawnRemote :: String -> FilePath -> IO (Handle, Handle)
 spawnRemote host dir = do
   cmd <- hostCmd host dir
@@ -125,6 +105,8 @@ spawnRemote host dir = do
   hSetBuffering w LineBuffering
   return (r, w)
 
+-- |
+-- Connect the remote host process and the local client
 connect :: String -> FilePath -> FilePath -> IO ()
 connect host rdir ldir = do
   (r, w) <- spawnRemote host rdir
