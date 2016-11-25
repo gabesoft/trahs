@@ -40,9 +40,15 @@ mergeMeta localMeta remoteMeta = (meta, actions)
       in (a : as, m)
     (actions, syncMap) = Map.mapAccumWithKey sync [] files
     fMetaMap = Map.map fromJust (Map.filter isJust syncMap)
-    versions =
-      mergeVersions (localMeta ^. versionVector) (remoteMeta ^. versionVector)
+    localVersions = updateReplica remoteMeta (localMeta ^. versionVector)
+    remoteVersions = updateReplica localMeta (remoteMeta ^. versionVector)
+    versions = mergeVersions localVersions remoteVersions
     meta = localMeta & versionVector .~ versions & fileMetaMap .~ fMetaMap
+
+-- |
+-- Updates the version vector with the replica id and version number from @meta@
+updateReplica :: GlobalMeta -> VersionMap -> VersionMap
+updateReplica meta = Map.insert (meta ^. globalReplica) (meta ^. globalVersion)
 
 -- |
 -- Sync two files and yield a @FileMeta@ as well as a @SyncAction@
