@@ -23,3 +23,4 @@ cabal.project.local
 .HTF/
 .trahs.db
 .trahs.db~
+remote/

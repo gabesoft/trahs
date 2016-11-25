@@ -43,6 +43,7 @@ server r w dir = do
   case cmd of
     InitSync -> initSync dir >> server r w dir
     FetchMeta -> readGlobalMeta dir >>= sendAsBytes w >> server r w dir
+    FetchFile path -> sendFile w (dir </> path) >> server r w dir
     Done -> return ()
     Turn -> client False r w dir
     _ -> do
@@ -61,11 +62,15 @@ client turn r w dir = do
   serverMeta <- readAsBytes r :: IO GlobalMeta
   localMeta <- readGlobalMeta dir
   let (meta, actions) = mergeMeta localMeta serverMeta
-  forM_ actions (executeAction r w dir)
+  forM_ actions (executeActionL r w dir)
   writeGlobalMeta dir meta
   if turn
     then sendCmd w Turn >> server r w dir
     else sendCmd w Done
+
+-- |
+-- Execute a @SyncAction@ and print it to the log
+executeActionL r w dir cmd = log (show cmd) >> executeAction r w dir cmd
 
 -- |
 -- Execute a @SyncAction@

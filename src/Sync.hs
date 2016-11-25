@@ -10,7 +10,7 @@ import qualified Data.ByteString.Lazy as BL
 import qualified Data.Map.Strict as Map
 import Data.Maybe (isJust, fromJust)
 import Meta
-import System.Directory (listDirectory)
+import System.Directory (listDirectory, createDirectoryIfMissing)
 import System.FilePath
 import System.IO.Error (isDoesNotExistError)
 import System.PosixCompat.Files
@@ -21,6 +21,7 @@ import Types
 -- Perform initialization before a sync
 initSync :: FilePath -> IO ()
 initSync dir = do
+  createDirectoryIfMissing True dir
   maybeDb <- tryJust (guard . isDoesNotExistError) (readGlobalMeta dir)
   db <- either (const mkGlobalMeta) id (return <$> maybeDb)
   meta <- updateMeta dir db
