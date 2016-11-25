@@ -1,22 +1,15 @@
 module Main where
 
 import Control.Applicative
-import Control.Exception
-import Control.Lens
-import Control.Monad (guard, filterM)
 import Data.ByteString as B (hPut, hGet, length)
 import Data.ByteString.Char8 (pack, unpack)
-import qualified Data.ByteString.Lazy as BL
-import qualified Data.Map as Map
 import Meta
 import Prelude hiding (log)
 import Sync
 import System.Environment
 import System.Exit
-import System.FilePath
 import System.IO
 import System.Process
-import Trahs
 import Types
 
 main :: IO ()
@@ -39,23 +32,23 @@ trassh :: String
 trassh = "ssh -CTaxq @ ./trahs --server"
 
 -- |
--- @server r w dir@ runs the code to serve the contents of @dir@,
--- reading input from @r@ and writing it to @w@.
+-- Run the code to serve the contents of @dir@,
+-- reading input from @r@ and writing it to @w@
 server :: Handle -> Handle -> FilePath -> IO ()
 server r w dir = do
   cmd <- readCmd r
   case cmd of
     InitSync -> initSync dir >> server r w dir
-    FetchMeta -> do
-      meta <- readGlobalMeta dir
-      sendAsBytes w meta
-      server r w dir
+    FetchMeta -> readGlobalMeta dir >>= sendAsBytes w >> server r w dir
     Done -> return ()
     Turn -> client False r w dir
     _ -> do
       hPutStrLn w ("Command received " ++ dir ++ " " ++ show cmd)
       server r w dir
 
+-- |
+-- Run the sync algorithm from server to client in @dir@,
+-- reading input from @r@ and writing it to @w@
 client :: Bool -> Handle -> Handle -> FilePath -> IO ()
 client turn r w dir = do
   log ("Client init sync in " ++ dir)
@@ -63,6 +56,8 @@ client turn r w dir = do
   initSync dir
   sendCmd w FetchMeta
   serverMeta <- readAsBytes r :: IO GlobalMeta
+  -- TODO: merge server meta into local
+  --       run all actions that resulted from merge
   log ("The server sent " ++ show serverMeta)
   sendCmd w (FetchFile "/etc/passwd")
   line3 <- hGetLine r
@@ -71,13 +66,21 @@ client turn r w dir = do
     then sendCmd w Turn >> server r w dir
     else sendCmd w Done
 
-sendAsBytes :: Show a => Handle -> a -> IO ()
+-- |
+-- Send an object as a @ByteString@ to the process represented by @handle@
+sendAsBytes
+  :: Show a
+  => Handle -> a -> IO ()
 sendAsBytes handle cargo = do
   let bytes = pack (show cargo)
   hPutStrLn handle (show $ B.length bytes)
   hPut handle bytes
 
-readAsBytes :: Read a => Handle -> IO a
+-- |
+-- Read an object as a @ByteString@ from the process represented by @handle@
+readAsBytes
+  :: Read a
+  => Handle -> IO a
 readAsBytes handle = do
   count <- read <$> hGetLine handle
   bytes <- hGet handle count

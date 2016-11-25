@@ -4,7 +4,7 @@
 module Types where
 
 import Control.Lens
-import qualified Data.Map as Map
+import qualified Data.Map.Strict as Map
 
 type ReplicaId = String
 
@@ -20,6 +20,15 @@ data Command
   | InitSync
   | Turn
   | Done
+  deriving (Eq, Show, Read)
+
+data SyncAction
+  = DeleteFile FilePath
+  | DownloadFile FilePath
+  | Noop
+  | FlagConflict FilePath
+                 FilePath
+                 FilePath
   deriving (Eq, Show, Read)
 
 data FileMeta = FileMeta
