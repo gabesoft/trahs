@@ -1,13 +1,16 @@
 module Main where
 
 import Control.Applicative
-import Data.ByteString as B (hPut, hGet, length)
+import Control.Monad (forM_)
+import qualified Data.ByteString as B
 import Data.ByteString.Char8 (pack, unpack)
 import Meta
 import Prelude hiding (log)
 import Sync
+import System.Directory (removeFile, renameFile)
 import System.Environment
 import System.Exit
+import System.FilePath
 import System.IO
 import System.Process
 import Types
@@ -56,25 +59,51 @@ client turn r w dir = do
   initSync dir
   sendCmd w FetchMeta
   serverMeta <- readAsBytes r :: IO GlobalMeta
-  -- TODO: merge server meta into local
-  --       run all actions that resulted from merge
-  log ("The server sent " ++ show serverMeta)
-  sendCmd w (FetchFile "/etc/passwd")
-  line3 <- hGetLine r
-  log ("The server said " ++ show line3)
+  localMeta <- readGlobalMeta dir
+  let (meta, actions) = mergeMeta localMeta serverMeta
+  forM_ actions (executeAction r w dir)
+  writeGlobalMeta dir meta
   if turn
     then sendCmd w Turn >> server r w dir
     else sendCmd w Done
 
 -- |
--- Send an object as a @ByteString@ to the process represented by @handle@
+-- Execute a @SyncAction@
+executeAction :: Handle -> Handle -> FilePath -> SyncAction -> IO ()
+executeAction _ _ _ Noop = return ()
+executeAction _ _ dir (DeleteFile path) = removeFile (dir </> path)
+executeAction r w dir (DownloadFile path) = do
+  sendCmd w (FetchFile path)
+  fetchFile r >>= B.writeFile (dir </> path)
+executeAction r w dir (FlagConflict path pLocal pRemote) = do
+  renameFile (dir </> path) (dir </> pLocal)
+  sendCmd w (FetchFile path)
+  fetchFile r >>= B.writeFile (dir </> pRemote)
+
+-- |
+-- Send the file at @path@ to the process referenced by @handle@
+sendFile :: Handle -> FilePath -> IO ()
+sendFile handle path = do
+  bytes <- B.readFile path
+  hPutStrLn handle (show $ B.length bytes)
+  B.hPut handle bytes
+
+-- |
+-- Fetch a file from the process referenced by @handle@
+fetchFile :: Handle -> IO B.ByteString
+fetchFile handle = do
+  count <- read <$> hGetLine handle
+  B.hGet handle count
+
+-- |
+-- Send an object as a @ByteString@ to the process referenced by @handle@
 sendAsBytes
   :: Show a
   => Handle -> a -> IO ()
 sendAsBytes handle cargo = do
   let bytes = pack (show cargo)
   hPutStrLn handle (show $ B.length bytes)
-  hPut handle bytes
+  B.hPut handle bytes
 
 -- |
 -- Read an object as a @ByteString@ from the process represented by @handle@
@@ -83,7 +112,7 @@ readAsBytes
   => Handle -> IO a
 readAsBytes handle = do
   count <- read <$> hGetLine handle
-  bytes <- hGet handle count
+  bytes <- B.hGet handle count
   return (read $ unpack bytes)
 
 -- |
