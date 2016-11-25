@@ -22,8 +22,8 @@ import Types
 initSync :: FilePath -> IO ()
 initSync dir = do
   createDirectoryIfMissing True dir
-  maybeDb <- tryJust (guard . isDoesNotExistError) (readGlobalMeta dir)
-  db <- either (const mkGlobalMeta) id (return <$> maybeDb)
+  defMeta <- mkGlobalMeta
+  db <- tryFileOp defMeta id readGlobalMeta dir
   meta <- updateMeta dir db
   writeGlobalMeta dir meta
 
@@ -111,16 +111,16 @@ updateMeta dir oldMeta = do
   let meta = oldMeta & globalVersion %~ (+ 1)
   items <- listDirectory dir
   files <- filterM (canSync dir) items
-  assoc <- mapM (updateFileMeta meta) files
+  assoc <- mapM (updateFileMeta dir meta) files
   return (meta & fileMetaMap .~ Map.fromList assoc)
 
 -- |
 -- Update the metadata for the file at @path@
 -- If an existing metadata exists and the file hasn't changed return it
 -- Otherwise, create a new metadata
-updateFileMeta :: GlobalMeta -> FilePath -> IO (FilePath, FileMeta)
-updateFileMeta meta path = do
-  sha <- hashFile path
+updateFileMeta :: FilePath -> GlobalMeta -> FilePath -> IO (FilePath, FileMeta)
+updateFileMeta dir meta path = do
+  sha <- hashFile (dir </> path)
   let fmeta = FileMeta rid vnr sha
   let emeta = maybe fmeta id (Map.lookup path fileMap)
   return
@@ -137,10 +137,23 @@ updateFileMeta meta path = do
 -- Determine whether the @file@ from @dir@ can be synced
 canSync :: FilePath -> FilePath -> IO Bool
 canSync dir file = do
-  isFile <- isRegularFile <$> getSymbolicLinkStatus (dir </> file)
+  isFile <- verifyIsFile (dir </> file)
   return $ notDb file && isFile
   where
     notDb = uncurry (&&) . ((/= traDb) &&& (/= traDbTemp))
+
+-- |
+-- Verify that @path@ points to a regular file
+verifyIsFile :: FilePath -> IO Bool
+verifyIsFile = tryFileOp False id (fmap isRegularFile . getSymbolicLinkStatus)
+
+-- |
+-- Try to execute a file operation accounting for the fact that the
+-- file may not exist
+tryFileOp :: b -> (a -> b) -> (t -> IO a) -> t -> IO b
+tryFileOp def f fop path = do
+  result <- tryJust (guard . isDoesNotExistError) (fop path)
+  return $ either (const def) id (f <$> result)
 
 -- |
 -- Get the max known version for a replica id

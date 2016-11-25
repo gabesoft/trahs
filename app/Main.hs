@@ -41,23 +41,19 @@ server :: Handle -> Handle -> FilePath -> IO ()
 server r w dir = do
   cmd <- readCmd r
   case cmd of
-    InitSync -> initSync dir >> server r w dir
+    InitSync -> initSyncL dir >> server r w dir
     FetchMeta -> readGlobalMeta dir >>= sendAsBytes w >> server r w dir
     FetchFile path -> sendFile w (dir </> path) >> server r w dir
     Done -> return ()
     Turn -> client False r w dir
-    _ -> do
-      hPutStrLn w ("Command received " ++ dir ++ " " ++ show cmd)
-      server r w dir
 
 -- |
 -- Run the sync algorithm from server to client in @dir@,
 -- reading input from @r@ and writing it to @w@
 client :: Bool -> Handle -> Handle -> FilePath -> IO ()
 client turn r w dir = do
-  log ("Client init sync in " ++ dir)
   sendCmd w InitSync
-  initSync dir
+  initSyncL dir
   sendCmd w FetchMeta
   serverMeta <- readAsBytes r :: IO GlobalMeta
   localMeta <- readGlobalMeta dir
@@ -68,8 +64,12 @@ client turn r w dir = do
     then sendCmd w Turn >> server r w dir
     else sendCmd w Done
 
+initSyncL :: FilePath -> IO ()
+initSyncL dir = log ("Init sync in " ++ dir) >> initSync dir
+
 -- |
 -- Execute a @SyncAction@ and print it to the log
+executeActionL :: Handle -> Handle -> FilePath -> SyncAction -> IO ()
 executeActionL r w dir cmd = log (show cmd) >> executeAction r w dir cmd
 
 -- |
@@ -81,9 +81,9 @@ executeAction r w dir (DownloadFile path) = do
   sendCmd w (FetchFile path)
   fetchFile r >>= B.writeFile (dir </> path)
 executeAction r w dir (FlagConflict path pLocal pRemote) = do
-  renameFile (dir </> path) (dir </> pLocal)
   sendCmd w (FetchFile path)
   fetchFile r >>= B.writeFile (dir </> pRemote)
+  renameFile (dir </> path) (dir </> pLocal)
 
 -- |
 -- Send the file at @path@ to the process referenced by @handle@
