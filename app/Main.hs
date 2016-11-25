@@ -55,7 +55,7 @@ client turn r w dir = do
   sendCmd w InitSync
   initSyncL dir
   sendCmd w FetchMeta
-  serverMeta <- readAsBytes r :: IO GlobalMeta
+  serverMeta <- readAsBytes r
   localMeta <- readGlobalMeta dir
   let (meta, actions) = mergeMeta localMeta serverMeta
   forM_ actions (executeActionL r w dir)
