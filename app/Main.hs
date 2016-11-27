@@ -4,6 +4,7 @@ import Control.Applicative
 import Control.Monad (forM_)
 import qualified Data.ByteString as B
 import Data.ByteString.Char8 (pack, unpack)
+import Data.Maybe (fromMaybe)
 import Meta
 import Prelude hiding (log)
 import Sync
@@ -90,7 +91,7 @@ executeAction r w dir (FlagConflict path pLocal pRemote) = do
 sendFile :: Handle -> FilePath -> IO ()
 sendFile handle path = do
   bytes <- B.readFile path
-  hPutStrLn handle (show $ B.length bytes)
+  hPrint handle (B.length bytes)
   B.hPut handle bytes
 
 -- |
@@ -107,7 +108,7 @@ sendAsBytes
   => Handle -> a -> IO ()
 sendAsBytes handle cargo = do
   let bytes = pack (show cargo)
-  hPutStrLn handle (show $ B.length bytes)
+  hPrint handle (B.length bytes)
   B.hPut handle bytes
 
 -- |
@@ -128,7 +129,7 @@ log = hPutStrLn stderr
 -- |
 -- Send a command to the process at @handle@
 sendCmd :: Handle -> Command -> IO ()
-sendCmd handle = hPutStrLn handle . show
+sendCmd = hPrint
 
 -- |
 -- Read a command from the process at @handle@
@@ -139,7 +140,7 @@ readCmd handle = read <$> hGetLine handle
 -- Create a command used to connect to a remote @host@ with @dir@
 hostCmd :: String -> FilePath -> IO String
 hostCmd host dir = do
-  tmpl <- maybe trassh id <$> lookupEnv "TRASSH"
+  tmpl <- fromMaybe trassh <$> lookupEnv "TRASSH"
   case break (== '@') tmpl of
     (b, '@':e) -> return $ b ++ host ++ e ++ ' ' : dir
     _ -> return $ tmpl ++ ' ' : dir

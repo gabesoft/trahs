@@ -8,7 +8,7 @@ import Control.Lens
 import Control.Monad (guard, filterM)
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.Map.Strict as Map
-import Data.Maybe (isJust, fromJust)
+import Data.Maybe (isJust, fromJust, fromMaybe)
 import Meta
 import System.Directory (listDirectory, createDirectoryIfMissing)
 import System.FilePath
@@ -61,8 +61,8 @@ syncFiles
 syncFiles _ _ _ (Nothing, Nothing) = (Noop, Nothing)
 syncFiles lvv rvv path (Just lm, Just rm)
   | lm == rm = (Noop, Just lm)
-  | (rm ^. fileVersion) <= (lvv rm) = (Noop, Just lm)
-  | (lm ^. fileVersion) <= (rvv lm) = (DownloadFile path, Just rm)
+  | rm ^. fileVersion <= lvv rm = (Noop, Just lm)
+  | lm ^. fileVersion <= rvv lm = (DownloadFile path, Just rm)
   | otherwise = (FlagConflict path (mkPath path lm) (mkPath path rm), Nothing)
 syncFiles lvv _ path (Nothing, Just rm)
   | (rm ^. fileVersion) > lvv rm = (DownloadFile path, Just rm)
@@ -76,7 +76,7 @@ syncFiles _ rvv path (Just lm, Nothing)
 -- from the version vector found in @gmeta@
 getMaxVersion :: GlobalMeta -> FileMeta -> VersionNr
 getMaxVersion gmeta fmeta =
-  maybe defaultVersion id (Map.lookup fReplica versions)
+  fromMaybe defaultVersion (Map.lookup fReplica versions)
   where
     defaultVersion =
       if fReplica == gReplica
@@ -90,7 +90,7 @@ getMaxVersion gmeta fmeta =
 -- Generate a file path that contains a file's replica id and version number
 mkPath :: FilePath -> FileMeta -> FilePath
 mkPath base meta =
-  base ++ "#" ++ (meta ^. fileReplica) ++ "." ++ (show $ meta ^. fileVersion)
+  base ++ "#" ++ (meta ^. fileReplica) ++ "." ++ show (meta ^. fileVersion)
 
 -- |
 -- Merge two version vector maps into another map where each replica id
@@ -103,10 +103,9 @@ mergeVersions = Map.unionWith max
 mergeFileMaps :: FileMetaMap
               -> FileMetaMap
               -> Map.Map FilePath (Maybe FileMeta, Maybe FileMeta)
-mergeFileMaps localMetaMap remoteMetaMap =
-  Map.mergeWithKey inBoth local remote localMetaMap remoteMetaMap
+mergeFileMaps = Map.mergeWithKey inBoth local remote
   where
-    inBoth = (\_ a b -> Just (Just a, Just b))
+    inBoth _ a b = Just (Just a, Just b)
     local = Map.map (\v -> (Just v, Nothing))
     remote = Map.map (\v -> (Nothing, Just v))
 
@@ -128,7 +127,7 @@ updateFileMeta :: FilePath -> GlobalMeta -> FilePath -> IO (FilePath, FileMeta)
 updateFileMeta dir meta path = do
   sha <- hashFile (dir </> path)
   let fmeta = FileMeta rid vnr sha
-  let emeta = maybe fmeta id (Map.lookup path fileMap)
+  let emeta = fromMaybe fmeta (Map.lookup path fileMap)
   return
     ( path
     , if (emeta ^. fileSha) == sha
@@ -166,7 +165,7 @@ tryFileOp def f fop path = do
 getVersion :: GlobalMeta -> ReplicaId -> VersionNr
 getVersion meta rid
   | rid == (meta ^. globalReplica) = meta ^. globalVersion
-  | otherwise = maybe 0 id $ Map.lookup rid (meta ^. versionVector)
+  | otherwise = fromMaybe 0 $ Map.lookup rid (meta ^. versionVector)
 
 -- |
 -- Create a SHA-256 hash of a file
